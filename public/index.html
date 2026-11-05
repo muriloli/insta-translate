@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d10">
+  <title>Insta Translate</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; }
+    body {
+      display: grid;
+      grid-template-rows: 1fr auto 1fr;
+      background: #0b0d10;
+      color: #e8eaed;
+      font: 16px/1.35 system-ui, -apple-system, sans-serif;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .side { display: flex; flex-direction: column; gap: 12px; padding: 16px; min-height: 0; }
+    .them { transform: rotate(180deg); }
+    .feed { flex: 1; overflow-y: auto; font-size: clamp(22px, 5.5vw, 34px); font-weight: 600; }
+    .feed p { color: #7d848e; margin-bottom: .5em; }
+    .feed p:last-child { color: #fff; }
+    select {
+      align-self: center;
+      font: inherit;
+      color: inherit;
+      background: #161a20;
+      border: 1px solid #2a3038;
+      border-radius: 999px;
+      padding: 8px 16px;
+    }
+    .bar { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 10px; border-block: 1px solid #1c2128; }
+    #go {
+      font: 600 18px system-ui, sans-serif;
+      color: #fff;
+      background: #2563eb;
+      border: 0;
+      border-radius: 999px;
+      padding: 14px 32px;
+    }
+    #go.on { background: #dc2626; }
+    #status { color: #9aa1ab; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <section class="side them">
+    <div class="feed" id="theirFeed" aria-live="polite"></div>
+    <select id="their" aria-label="Idioma da outra pessoa"></select>
+  </section>
+  <div class="bar">
+    <button id="go">Iniciar</button>
+    <span id="status" role="status">Toque para começar</span>
+  </div>
+  <section class="side">
+    <div class="feed" id="myFeed" aria-live="polite"></div>
+    <select id="mine" aria-label="Meu idioma"></select>
+  </section>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
