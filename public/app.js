@@ -2,12 +2,14 @@ const WS = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelangu
 const MODEL = 'models/gemini-3.5-live-translate-preview';
 const LANGS = 'af ak sq am ar hy az eu be bn bg my ca zh-Hans zh-Hant hr cs da nl en et fil fi fr gl ka de el gu ha he hi hu is id it ja jv kn kk km rw ko lo lv lt mk ms ml mr mn ne nb fa pl pt-BR pt-PT pa ro ru sr sd si sk sl es su sw sv ta te th tr uk ur uz vi zu'.split(' ');
 const GAP_MS = 1500; // pausa que abre um novo parágrafo
-const MIC_TAIL = 0.3; // segundos de mic mudo depois que a tradução termina de tocar, para o alto-falante não realimentar
+const MIC_TAIL = 0.3; // segundos a mais de surdez da outra sessão depois que a voz traduzida termina (eco do alto-falante)
+const MAX_LAG = 0.3; // fila de áudio acima disso: descarta silêncio para recuperar o atraso
+const VOICE = 500; // pico PCM16 acima disso conta como voz (o Gemini manda zeros quando não há tradução)
 
 const $ = (id) => document.getElementById(id);
 const display = new Intl.DisplayNames(['pt-BR'], { type: 'language' });
 const name = (code) => display.of(code).replace(/^./, (c) => c.toUpperCase());
-let ctx, stream, wakeLock;
+let ctx, stream, wakeLock, SILENCE;
 let sessions = [];
 
 for (const [id, def] of [['mine', 'pt-BR'], ['their', 'en']]) {
@@ -59,7 +61,7 @@ function setUI(on, text) {
 }
 
 function session(lang, feed) {
-  const s = { lang, feed, end: 0, ready: false };
+  const s = { lang, feed, end: 0, voiceEnd: 0, ready: false };
   connect(s).catch(fail);
   return s;
 }
@@ -106,16 +108,28 @@ function receive(s, msg) {
   for (const p of c?.modelTurn?.parts ?? []) if (p.inlineData) play(s, p.inlineData.data);
 }
 
+// O Gemini traduz enquanto a pessoa ainda fala, então o mic não pode ser cortado para quem está traduzindo.
+// Só a OUTRA sessão fica surda enquanto uma toca voz; a própria ignora a voz dela, que já está no idioma de destino.
 function send(pcm) {
   if (!ctx) return;
-  const playing = ctx.currentTime < Math.max(...sessions.map((s) => s.end)) + MIC_TAIL;
-  const data = b64(playing ? new ArrayBuffer(pcm.byteLength) : pcm);
-  const msg = JSON.stringify({ realtimeInput: { audio: { data, mimeType: 'audio/pcm;rate=16000' } } });
-  for (const s of sessions) if (s.ready) s.ws.send(msg);
+  const now = ctx.currentTime;
+  const voice = audioMsg(pcm);
+  for (const s of sessions) {
+    if (!s.ready) continue;
+    const otherTalking = sessions.some((o) => o !== s && now < o.voiceEnd + MIC_TAIL);
+    s.ws.send(otherTalking ? (SILENCE ??= audioMsg(new ArrayBuffer(pcm.byteLength))) : voice);
+  }
+}
+
+function audioMsg(buf) {
+  const data = btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return JSON.stringify({ realtimeInput: { audio: { data, mimeType: 'audio/pcm;rate=16000' } } });
 }
 
 function play(s, data) {
   const pcm = new Int16Array(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)).buffer);
+  const voice = pcm.some((v) => v > VOICE || v < -VOICE);
+  if (!voice && s.end - ctx.currentTime > MAX_LAG) return;
   const buf = ctx.createBuffer(1, pcm.length, 24000);
   buf.getChannelData(0).set(Float32Array.from(pcm, (v) => v / 32768));
   const src = ctx.createBufferSource();
@@ -124,6 +138,7 @@ function play(s, data) {
   s.end = Math.max(s.end, ctx.currentTime);
   src.start(s.end);
   s.end += buf.duration;
+  if (voice) s.voiceEnd = s.end;
 }
 
 function write(s, text) {
@@ -133,5 +148,3 @@ function write(s, text) {
   s.p.textContent += text;
   s.feed.scrollTop = s.feed.scrollHeight;
 }
-
-const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));

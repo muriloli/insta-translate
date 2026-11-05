@@ -19,13 +19,13 @@ async function token(lang) {
     headers: { 'x-goog-api-key': GEMINI_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       uses: 1,
-      liveConnectConstraints: {
+      bidiGenerateContentSetup: {
         model: MODEL,
-        config: {
+        generationConfig: {
           responseModalities: ['AUDIO'],
-          outputAudioTranscription: {},
           translationConfig: { targetLanguageCode: lang, echoTargetLanguage: false },
         },
+        outputAudioTranscription: {},
       },
     }),
   });
