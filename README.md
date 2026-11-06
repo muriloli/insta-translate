@@ -93,3 +93,7 @@ A mesma arquitetura vale no iPhone: o app pede o token ao mesmo `server.js` e ab
 1. **Áudio:** `AVAudioEngine` com `setVoiceProcessingEnabled(true)`, que traz cancelamento de eco do sistema. Isso pode dispensar a surdez da outra sessão e permitir interromper.
 2. **Rede:** `URLSessionWebSocketTask`, com o mesmo protocolo do `app.js`.
 3. **Modo offline (opcional):** `SpeechAnalyzer` (iOS 26+) + framework `Translation` + `AVSpeechSynthesizer`, tudo no aparelho, sem custo por minuto e sem internet. A qualidade e a voz são inferiores às do Gemini, então serve de plano B.
+
+## Licença
+
+[MIT](LICENSE). Cada pessoa que rodar o projeto usa a própria chave do Gemini.
