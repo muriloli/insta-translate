@@ -4,13 +4,17 @@ const LANGS = 'af ak sq am ar hy az eu be bn bg my ca zh-Hans zh-Hant hr cs da n
 const GAP_MS = 1500; // pausa que abre um novo parágrafo
 const MIC_TAIL = 0.3; // segundos a mais de surdez da outra sessão depois que a voz traduzida termina (eco do alto-falante)
 const MAX_LAG = 0.3; // fila de áudio acima disso: descarta silêncio para recuperar o atraso
-const VOICE = 500; // pico PCM16 acima disso conta como voz (o Gemini manda zeros quando não há tradução)
+const VOICE = 2000; // pico PCM16 acima disso conta como voz: o Gemini manda zeros sem tradução e ruídos de ~650 ao ouvir o próprio idioma; voz fica entre 12k e 23k
+const GATE_HOLD = 6; // blocos de 100 ms que o filtro de ruído continua aberto depois da última fala (fim das palavras)
+const DEBUG = new URLSearchParams(location.search).has('debug'); // ?debug manda eventos e o áudio do mic para logs/ no servidor
 
 const $ = (id) => document.getElementById(id);
 const display = new Intl.DisplayNames(['pt-BR'], { type: 'language' });
 const name = (code) => display.of(code).replace(/^./, (c) => c.toUpperCase());
-let ctx, stream, wakeLock, SILENCE;
+let ctx, stream, wakeLock, split, SILENCE, t0, logId, logTimer, noiseFloor, gateHold;
 let sessions = [];
+let logs = [];
+let audio = [];
 
 for (const [id, def] of [['mine', 'pt-BR'], ['their', 'en']]) {
   const sel = $(id);
@@ -18,6 +22,10 @@ for (const [id, def] of [['mine', 'pt-BR'], ['their', 'en']]) {
   sel.append(...LANGS.map((c) => new Option(name(c), c, false, c === value)).sort((a, b) => a.text.localeCompare(b.text)));
   sel.onchange = () => (localStorage[id] = sel.value);
 }
+$('split').checked = localStorage.split === '1';
+$('split').onchange = () => (localStorage.split = $('split').checked ? '1' : '');
+$('noise').value = localStorage.noise ?? '8';
+$('noise').onchange = () => (localStorage.noise = $('noise').value);
 
 $('go').onclick = () => (ctx ? stop() : start().catch(fail));
 
@@ -25,8 +33,21 @@ $('go').onclick = () => (ctx ? stop() : start().catch(fail));
 // cada uma fica em silêncio quando a fala já está no seu idioma, então a conversa vira mãos-livres.
 async function start() {
   ctx = new AudioContext();
+  t0 = performance.now();
+  noiseFloor = undefined;
+  gateHold = 0;
+  logs = [];
+  audio = [];
+  if (DEBUG) {
+    logId = new Date().toISOString().slice(0, 19).replace(/\D/g, '');
+    logTimer = setInterval(flush, 1000);
+  }
+  split = $('split').checked;
+  log({ e: 'start', mine: $('mine').value, their: $('their').value, split, rate: ctx.sampleRate, ua: navigator.userAgent });
   setUI(true, 'Conectando…');
-  sessions = [session($('their').value, $('theirFeed')), session($('mine').value, $('myFeed'))];
+  // Modo fone: a tradução para a outra pessoa sai no lado esquerdo, a sua no direito.
+  sessions = [session($('their').value, $('theirFeed'), -1), session($('mine').value, $('myFeed'), 1)];
+  // O cancelamento de eco fica ligado mesmo com fone: no iPhone ele vem junto com a supressão de ruído do sistema.
   stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
@@ -38,6 +59,11 @@ async function start() {
 }
 
 function stop() {
+  log({ e: 'stop' });
+  if (DEBUG) {
+    clearInterval(logTimer);
+    flush();
+  }
   for (const s of sessions) s.ws?.close();
   sessions = [];
   stream?.getTracks().forEach((t) => t.stop());
@@ -49,6 +75,7 @@ function stop() {
 
 function fail(e) {
   if (!ctx) return;
+  log({ e: 'error', msg: e.message });
   stop();
   $('status').textContent = e.name === 'NotAllowedError' ? 'Permita o acesso ao microfone' : e.message;
 }
@@ -56,19 +83,26 @@ function fail(e) {
 function setUI(on, text) {
   $('go').classList.toggle('on', on);
   $('go').textContent = on ? 'Parar' : 'Iniciar';
-  $('mine').disabled = $('their').disabled = on;
+  $('mine').disabled = $('their').disabled = $('split').disabled = on;
   $('status').textContent = text;
 }
 
-function session(lang, feed) {
-  const s = { lang, feed, end: 0, voiceEnd: 0, ready: false };
+function session(lang, feed, pan) {
+  const s = { lang, feed, end: 0, voiceEnd: 0, ready: false, out: ctx.destination };
+  if (split) (s.out = new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
   connect(s).catch(fail);
   return s;
 }
 
 async function connect(s) {
-  const r = await fetch(`/token?lang=${encodeURIComponent(s.lang)}`, { method: 'POST' });
-  if (!r.ok) throw new Error(await r.text());
+  const getToken = () => fetch(`/token?lang=${encodeURIComponent(s.lang)}`, { method: 'POST' }).catch(() => null);
+  let r = await getToken();
+  if (!r?.ok) r = await getToken(); // túnel ou servidor piscou: tenta mais uma vez
+  if (!r) throw new Error('Sem conexão com o servidor. Tente de novo.');
+  if (!r.ok) {
+    const html = r.headers.get('content-type')?.includes('html');
+    throw new Error(html ? `Servidor indisponível (${r.status}). Tente de novo.` : await r.text());
+  }
   const { token } = await r.json();
   if (!sessions.includes(s)) return;
 
@@ -82,11 +116,13 @@ async function connect(s) {
           responseModalities: ['AUDIO'],
           translationConfig: { targetLanguageCode: s.lang, echoTargetLanguage: false },
         },
+        inputAudioTranscription: {},
         outputAudioTranscription: {},
       },
     }));
   ws.onmessage = ({ data }) => receive(s, JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data)));
   ws.onclose = ({ code, reason }) => {
+    log({ e: 'close', s: s.lang, code, reason });
     const wasReady = s.ready;
     s.ready = false;
     if (!sessions.includes(s)) return;
@@ -101,24 +137,44 @@ async function connect(s) {
 function receive(s, msg) {
   if (msg.setupComplete) {
     s.ready = true;
+    log({ e: 'ready', s: s.lang, outLat: ctx.outputLatency, baseLat: ctx.baseLatency });
     if (sessions.every((x) => x.ready)) $('status').textContent = 'Pode falar';
   }
   const c = msg.serverContent;
-  if (c?.outputTranscription?.text) write(s, c.outputTranscription.text);
+  if (c?.inputTranscription?.text) log({ e: 'heard', s: s.lang, text: c.inputTranscription.text, lang: c.inputTranscription.languageCode });
+  if (c?.outputTranscription?.text) {
+    log({ e: 'said', s: s.lang, text: c.outputTranscription.text, lang: c.outputTranscription.languageCode });
+    write(s, c.outputTranscription.text);
+  }
   for (const p of c?.modelTurn?.parts ?? []) if (p.inlineData) play(s, p.inlineData.data);
+  if (!c && !msg.setupComplete) log({ e: 'msg', s: s.lang, keys: Object.keys(msg) });
 }
 
 // O Gemini traduz enquanto a pessoa ainda fala, então o mic não pode ser cortado para quem está traduzindo.
 // Só a OUTRA sessão fica surda enquanto uma toca voz; a própria ignora a voz dela, que já está no idioma de destino.
+// currentTime é o relógio do áudio; o som só sai do alto-falante outputLatency depois (bem mais no Bluetooth).
 function send(pcm) {
   if (!ctx) return;
   const now = ctx.currentTime;
-  const voice = audioMsg(pcm);
-  for (const s of sessions) {
-    if (!s.ready) continue;
-    const otherTalking = sessions.some((o) => o !== s && now < o.voiceEnd + MIC_TAIL);
-    s.ws.send(otherTalking ? (SILENCE ??= audioMsg(new ArrayBuffer(pcm.byteLength))) : voice);
+  const tail = MIC_TAIL + (ctx.outputLatency || 0);
+  const lvl = level(pcm);
+  const open = gate(lvl.db);
+  const voice = open && audioMsg(pcm);
+  const deaf = sessions.map((s) => !split && sessions.some((o) => o !== s && now < o.voiceEnd + tail));
+  sessions.forEach((s, i) => s.ready && s.ws.send(!open || deaf[i] ? (SILENCE ??= audioMsg(new ArrayBuffer(pcm.byteLength))) : voice));
+  if (DEBUG) {
+    audio.push(pcm);
+    log({ e: 'mic', ...lvl, open, floor: Math.round(noiseFloor), deaf: sessions.filter((_, i) => deaf[i]).map((s) => s.lang) });
   }
+}
+
+// Filtro de ruído: só passa o que estiver `margin` dB acima do ruído de fundo (conversas ao longe ficam de fora).
+// O ruído de fundo desce na hora e sobe 1 dB/s, então acompanha o ambiente sem aprender a própria fala como ruído.
+function gate(db) {
+  noiseFloor = Math.min(db, (noiseFloor ?? db) + 0.1);
+  const margin = +$('noise').value;
+  if (!margin || db > noiseFloor + margin) gateHold = GATE_HOLD;
+  return gateHold-- > 0;
 }
 
 function audioMsg(buf) {
@@ -128,17 +184,26 @@ function audioMsg(buf) {
 
 function play(s, data) {
   const pcm = new Int16Array(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)).buffer);
-  const voice = pcm.some((v) => v > VOICE || v < -VOICE);
-  if (!voice && s.end - ctx.currentTime > MAX_LAG) return;
+  const pk = pcm.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  const voice = pk > VOICE;
+  const now = ctx.currentTime;
+  if (!voice && s.end - now > MAX_LAG) return log({ e: 'drop', s: s.lang });
+  // Com sotaque, as duas sessões às vezes acham que a fala é do outro idioma e ambas traduzem.
+  // Nos testes a sessão certa começou antes; a que chega depois fica calada enquanto a outra fala.
+  // ponytail: "quem começa primeiro" é heurística; decidir pelo idioma do inputTranscription se errar demais
+  if (voice && s.voiceEnd <= now && sessions.some((o) => o !== s && o.voiceEnd > now)) return log({ e: 'mute', s: s.lang });
   const buf = ctx.createBuffer(1, pcm.length, 24000);
   buf.getChannelData(0).set(Float32Array.from(pcm, (v) => v / 32768));
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
-  s.end = Math.max(s.end, ctx.currentTime);
+  src.connect(s.out);
+  s.end = Math.max(s.end, now);
   src.start(s.end);
   s.end += buf.duration;
-  if (voice) s.voiceEnd = s.end;
+  if (voice) {
+    s.voiceEnd = s.end;
+    log({ e: 'voice', s: s.lang, pk, lag: Math.round((s.end - now) * 1000) });
+  }
 }
 
 function write(s, text) {
@@ -147,4 +212,27 @@ function write(s, text) {
   s.last = now;
   s.p.textContent += text;
   s.feed.scrollTop = s.feed.scrollHeight;
+}
+
+function log(e) {
+  if (DEBUG) logs.push({ t: Math.round(performance.now() - t0), ...e });
+}
+
+// ponytail: os POSTs podem chegar fora de ordem se a rede travar; numerar os blocos se o áudio sair embaralhado
+function flush() {
+  if (logs.length) fetch(`/log?id=${logId}`, { method: 'POST', body: JSON.stringify(logs) });
+  if (audio.length) fetch(`/audio?id=${logId}`, { method: 'POST', body: new Blob(audio) });
+  logs = [];
+  audio = [];
+}
+
+function level(buf) {
+  const s = new Int16Array(buf);
+  let sum = 0;
+  let pk = 0;
+  for (const v of s) {
+    sum += v * v;
+    pk = Math.max(pk, Math.abs(v));
+  }
+  return { db: Math.round(10 * Math.log10(sum / s.length / 32768 ** 2 + 1e-9)), pk };
 }

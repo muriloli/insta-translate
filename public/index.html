@@ -30,7 +30,10 @@
       border-radius: 999px;
       padding: 8px 16px;
     }
-    .bar { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 10px; border-block: 1px solid #1c2128; }
+    .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; padding: 10px; border-block: 1px solid #1c2128; }
+    .opt { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 20px; color: #9aa1ab; font-size: 14px; }
+    .opt input { vertical-align: middle; margin-right: 6px; }
+    .opt select { padding: 4px 10px; margin-left: 6px; }
     #go {
       font: 600 18px system-ui, sans-serif;
       color: #fff;
@@ -51,6 +54,16 @@
   <div class="bar">
     <button id="go">Iniciar</button>
     <span id="status" role="status">Toque para começar</span>
+    <div class="opt">
+      <label><input type="checkbox" id="split"> Fone: você no direito, a outra pessoa no esquerdo</label>
+      <label>Filtro de ruído
+        <select id="noise">
+          <option value="0">Desligado</option>
+          <option value="8">Normal</option>
+          <option value="15">Forte (lugar barulhento)</option>
+        </select>
+      </label>
+    </div>
   </div>
   <section class="side">
     <div class="feed" id="myFeed" aria-live="polite"></div>

@@ -19,7 +19,19 @@ Hoje é um app web (celular ou computador). Depois vem o app nativo para iOS (ve
 - **Modelo:** `gemini-3.5-live-translate-preview`, que traduz voz para voz em um só passo (sem a cadeia transcrever → traduzir → sintetizar) e mantém o tom e o ritmo de quem fala.
 - **Conversa mãos-livres:** duas sessões ouvem o mesmo microfone. Com `echoTargetLanguage: false`, cada sessão fica calada quando a fala já está no seu idioma. Assim só a sessão certa responde.
 - **Sem realimentação:** enquanto uma sessão toca voz traduzida, a *outra* recebe silêncio no lugar do microfone, para não traduzir o alto-falante de volta. A sessão que está traduzindo continua ouvindo, porque o Gemini traduz enquanto a pessoa ainda fala e ignora a própria voz, que já está no idioma de destino.
+- **Uma tradução por vez:** com sotaque, às vezes as duas sessões acham que a fala é do outro idioma e as duas traduzem. A que começa depois fica calada enquanto a primeira fala (nos testes, a certa sempre começou antes).
+- **Modo fone:** marcando a opção, a tradução para a outra pessoa sai no lado esquerdo e a sua no direito. Com fone não há eco. Fone com fio garante os dois lados separados; no Bluetooth, muitos celulares passam para mono quando o microfone está ligado.
+- **Filtro de ruído** (Desligado / Normal / Forte): só passa o que estiver 8 ou 15 dB acima do ruído de fundo, que é medido o tempo todo. Ruído constante (restaurante, rua) fica de fora. Uma pessoa falando alto por perto ainda pode passar; nesse caso, segure o celular mais perto de quem fala ou use o microfone do fone.
 - **Layout frente a frente:** a metade de cima fica de ponta-cabeça para quem está do outro lado da mesa.
+
+### Diagnóstico
+
+Abra o app com `?debug` no fim do link. Ele grava em `logs/` (fora do Git), a cada segundo:
+- o nível do microfone;
+- se o filtro e o bloqueio de eco estavam abertos;
+- o que cada sessão ouviu e falou, com o idioma detectado;
+- quando a voz tocou;
+- o áudio do microfone, em PCM 16 kHz.
 
 ## Por que essa stack (pesquisa de nov/2026)
 
