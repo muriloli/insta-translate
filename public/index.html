@@ -21,6 +21,7 @@
     .feed { flex: 1; overflow-y: auto; font-size: clamp(22px, 5.5vw, 34px); font-weight: 600; }
     .feed p { color: #7d848e; margin-bottom: .5em; }
     .feed p:last-child { color: #fff; }
+    .pick { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
     select {
       align-self: center;
       font: inherit;
@@ -49,7 +50,14 @@
 <body>
   <section class="side them">
     <div class="feed" id="theirFeed" aria-live="polite"></div>
-    <select id="their" aria-label="Idioma da outra pessoa"></select>
+    <div class="pick">
+      <select id="their" aria-label="Idioma da outra pessoa"></select>
+      <select id="theirVoice" aria-label="Voz da tradução para a outra pessoa">
+        <option value="">Voz de quem fala</option>
+        <option value="Kore">Voz de mulher</option>
+        <option value="Charon">Voz de homem</option>
+      </select>
+    </div>
   </section>
   <div class="bar">
     <button id="go">Iniciar</button>
@@ -59,7 +67,7 @@
       <label>Filtro de ruído
         <select id="noise">
           <option value="0">Desligado</option>
-          <option value="8">Normal</option>
+          <option value="8" selected>Normal</option>
           <option value="15">Forte (lugar barulhento)</option>
         </select>
       </label>
@@ -67,7 +75,14 @@
   </div>
   <section class="side">
     <div class="feed" id="myFeed" aria-live="polite"></div>
-    <select id="mine" aria-label="Meu idioma"></select>
+    <div class="pick">
+      <select id="mine" aria-label="Meu idioma"></select>
+      <select id="myVoice" aria-label="Voz da tradução para você">
+        <option value="">Voz de quem fala</option>
+        <option value="Kore">Voz de mulher</option>
+        <option value="Charon">Voz de homem</option>
+      </select>
+    </div>
   </section>
   <script type="module" src="app.js"></script>
 </body>

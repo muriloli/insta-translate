@@ -19,7 +19,9 @@ Hoje é um app web (celular ou computador). Depois vem o app nativo para iOS (ve
 - **Modelo:** `gemini-3.5-live-translate-preview`, que traduz voz para voz em um só passo (sem a cadeia transcrever → traduzir → sintetizar) e mantém o tom e o ritmo de quem fala.
 - **Conversa mãos-livres:** duas sessões ouvem o mesmo microfone. Com `echoTargetLanguage: false`, cada sessão fica calada quando a fala já está no seu idioma. Assim só a sessão certa responde.
 - **Sem realimentação:** enquanto uma sessão toca voz traduzida, a *outra* recebe silêncio no lugar do microfone, para não traduzir o alto-falante de volta. A sessão que está traduzindo continua ouvindo, porque o Gemini traduz enquanto a pessoa ainda fala e ignora a própria voz, que já está no idioma de destino.
-- **Uma tradução por vez:** com sotaque, às vezes as duas sessões acham que a fala é do outro idioma e as duas traduzem. A que começa depois fica calada enquanto a primeira fala (nos testes, a certa sempre começou antes).
+- **Uma tradução por vez:** com sotaque, às vezes as duas sessões acham que a fala é do outro idioma e as duas traduzem. Nos testes, quem errou foi sempre a sessão do idioma da outra pessoa (repetia o inglês dito com sotaque). Por isso, quando a sessão do seu idioma está traduzindo, a outra fica calada.
+- **Voz de cada lado:** o tradutor imita a voz de quem fala, e ela muda de uma frase para outra. Ele aceita `voiceName`, mas ignora a escolha (testado em nov/2026; [outro desenvolvedor relatou o mesmo](https://discuss.ai.google.dev/t/field-report-gemini-3-5-live-translate-preview-setup-schema-docs-runtime-mismatch-voice-pinning-silently-ignored-within-session-voice-drift/173369)). Ao escolher "Voz de mulher" ou "Voz de homem", o áudio do tradutor é descartado e uma segunda conexão (`gemini-3.1-flash-live-preview`, vozes Kore e Charon) lê o texto traduzido com voz fixa. O texto vai em moldura ("leia exatamente: «…»"), porque sem ela o modelo responde em vez de ler. Nas conversas gravadas, a voz fixa termina ~2 s depois do último texto, uns 0,5 a 1 s a mais que a voz original em frases curtas. O modo fone continua funcionando.
+- **Conexão travada:** se uma das conexões não fica pronta em 8 s, o app abandona essa e tenta mais uma vez. Se travar de novo, mostra "Demorou para conectar".
 - **Modo fone:** marcando a opção, a tradução para a outra pessoa sai no lado esquerdo e a sua no direito. Com fone não há eco. Fone com fio garante os dois lados separados; no Bluetooth, muitos celulares passam para mono quando o microfone está ligado.
 - **Filtro de ruído** (Desligado / Normal / Forte): só passa o que estiver 8 ou 15 dB acima do ruído de fundo, que é medido o tempo todo. Ruído constante (restaurante, rua) fica de fora. Uma pessoa falando alto por perto ainda pode passar; nesse caso, segure o celular mais perto de quem fala ou use o microfone do fone.
 - **Layout frente a frente:** a metade de cima fica de ponta-cabeça para quem está do outro lado da mesa.
@@ -71,7 +73,7 @@ Qualquer hospedagem Node (Render, Railway, Fly.io…). Configure `GEMINI_API_KEY
 
 ## Arquivos
 
-- `server.js`: serve a página e emite os tokens.
+- `server.js`: serve a página e emite os tokens, cada um com a configuração da sua conexão (tradutor ou voz fixa).
 - `public/app.js`: sessões, envio do microfone, reprodução e legendas.
 - `public/worklet.js`: converte o microfone para PCM 16 kHz em blocos de 100 ms.
 - `test.js`: confere a conversão de áudio (`npm test`).
@@ -82,7 +84,7 @@ Qualquer hospedagem Node (Render, Railway, Fly.io…). Configure `GEMINI_API_KEY
 - O Gemini manda áudio sem parar (zeros quando não há tradução). O app só trata como voz os trechos com som.
 - Se a conexão cair, o app reconecta, mas perde o que foi dito durante a troca.
 - O próprio Google avisa que a detecção de idioma pode se confundir entre línguas parecidas (como espanhol e português) e com sotaque forte.
-- Custo no plano pago: as duas sessões cobram a entrada de áudio (US$ 0,0053/min cada), mas só a que traduz cobra a saída (US$ 0,0315/min). Dá uns US$ 0,04 por minuto de conversa. O plano gratuito cobre o modelo, mas o Google pode usar o conteúdo para melhorar os produtos dele.
+- Custo no plano pago: as duas sessões cobram a entrada de áudio (US$ 0,0053/min cada), mas só a que traduz cobra a saída (US$ 0,0315/min). Dá uns US$ 0,04 por minuto de conversa. Cada lado com voz fixa soma mais uma conexão, que cobra o áudio de saída no preço do modelo Live geral. O plano gratuito cobre o modelo, mas o Google pode usar o conteúdo para melhorar os produtos dele.
 
 ## Roadmap iOS nativo
 
