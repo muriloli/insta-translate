@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "engines": { "node": ">=22.9" },
+  "dependencies": { "@vercel/functions": "^3.11.0" },
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "test": "node test.js"

@@ -12,7 +12,7 @@ Hoje é um app web (celular ou computador). Depois vem o app nativo para iOS (ve
                        └──► WebSocket B (destino: meu idioma)  ──► áudio + legenda na metade de baixo
                  └────────────────────┬───────────────────┘
                                       │ só para pegar um token de 1 uso
-                                 server.js (Node, sem dependências)
+                       server.js (local) ou função da Vercel
 ```
 
 - **O áudio vai direto do navegador para o Google.** O servidor só emite um token temporário (1 uso, travado no modelo e no idioma). Não existe salto extra no caminho da voz, que é o que mais pesa na latência.
@@ -67,16 +67,24 @@ Microfone no navegador exige HTTPS. O jeito mais rápido é abrir um túnel:
 npx cloudflared tunnel --url http://localhost:3000
 ```
 
-### Deploy
+### Deploy na Vercel
 
-Qualquer hospedagem Node (Render, Railway, Fly.io…). Configure `GEMINI_API_KEY` e **sempre** `APP_PASSWORD`. Sem senha, qualquer pessoa que achar a URL gasta os seus créditos.
+1. Em [vercel.com/new](https://vercel.com/new), importe este repositório (sem mudar nenhuma configuração de build).
+2. Em **Environment Variables**, crie `GEMINI_API_KEY` e **sempre** `APP_PASSWORD`. Sem senha, qualquer pessoa que achar a URL gasta a sua cota do Gemini.
+3. Clique em **Deploy**. O link `https://<projeto>.vercel.app` já pede a senha e funciona no celular (a Vercel já entrega HTTPS).
+
+Na Vercel, a página sai de `public/`, o token vem de `api/token.js` e a senha é pedida pelo `middleware.js`. O modo `?debug` só grava logs no servidor local.
+
+Outras hospedagens Node (Render, Railway, Fly.io…) rodam o `server.js` direto, com as mesmas duas variáveis.
 
 ## Arquivos
 
-- `server.js`: serve a página e emite os tokens, cada um com a configuração da sua conexão (tradutor ou voz fixa).
+- `lib/token.js`: senha e emissão dos tokens, cada um com a configuração da sua conexão (tradutor ou voz fixa). Usado pelo servidor local e pela Vercel.
+- `server.js`: servidor local (página, tokens e logs do `?debug`). Não precisa de `npm install`.
+- `api/token.js` e `middleware.js`: o mesmo na Vercel.
 - `public/app.js`: sessões, envio do microfone, reprodução e legendas.
 - `public/worklet.js`: converte o microfone para PCM 16 kHz em blocos de 100 ms.
-- `test.js`: confere a conversão de áudio (`npm test`).
+- `test.js`: confere a conversão de áudio e a checagem da senha (`npm test`).
 
 ## Limitações conhecidas
 
@@ -88,7 +96,7 @@ Qualquer hospedagem Node (Render, Railway, Fly.io…). Configure `GEMINI_API_KEY
 
 ## Roadmap iOS nativo
 
-A mesma arquitetura vale no iPhone: o app pede o token ao mesmo `server.js` e abre os WebSockets direto com o Google.
+A mesma arquitetura vale no iPhone: o app pede o token ao mesmo `/api/token` e abre os WebSockets direto com o Google.
 
 1. **Áudio:** `AVAudioEngine` com `setVoiceProcessingEnabled(true)`, que traz cancelamento de eco do sistema. Isso pode dispensar a surdez da outra sessão e permitir interromper.
 2. **Rede:** `URLSessionWebSocketTask`, com o mesmo protocolo do `app.js`.

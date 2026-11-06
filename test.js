@@ -17,4 +17,12 @@ for (const rate of [48000, 44100]) {
   assert.equal(chunks[0].length, 1600);
   assert(chunks[0].every((v) => Math.abs(v - 16383) <= 1), `${rate} Hz: amplitude preservada`);
 }
+
+process.env.APP_PASSWORD = 'senha:com:dois-pontos';
+const { authorized } = await import('./lib/token.js');
+const basic = (s) => 'Basic ' + Buffer.from(s).toString('base64');
+assert(authorized(basic('qualquer:senha:com:dois-pontos')), 'senha certa passa');
+assert(!authorized(basic('qualquer:errada')), 'senha errada não passa');
+assert(!authorized(basic('senha:com:dois-pontos')), 'sem usuário, o que vem antes do primeiro ":" não conta como senha');
+assert(!authorized(), 'sem cabeçalho não passa');
 console.log('ok');

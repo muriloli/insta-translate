@@ -118,7 +118,7 @@ async function connect(c, retried) {
     connect(c, true).catch(fail);
     old?.close();
   }, CONNECT_MS);
-  const getToken = () => fetch(`/token?${c.query}`, { method: 'POST' }).catch(() => null);
+  const getToken = () => fetch(`/api/token?${c.query}`, { method: 'POST' }).catch(() => null);
   let r = await getToken();
   if (!r?.ok) r = await getToken(); // túnel ou servidor piscou: tenta mais uma vez
   if (!r) throw new Error('Sem conexão com o servidor. Tente de novo.');
